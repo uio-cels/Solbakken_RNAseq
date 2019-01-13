@@ -1,0 +1,254 @@
+#Note that assembly was done using trimmed reads from both the Francisella and Vibrio experiments. 
+#Trimming was done before hand using cutadapt
+#mapping was done identically for both Francisella and Vibrio
+
+
+module load  trinityrnaseq/trinityrnaseq-2.0.6
+module load bowtie/1.0.0 
+module load samtools/0.1.19 
+module load gcc
+module load perlmodules/5.10_2
+ulimit -s unlimited
+
+
+
+##############################################
+#Trinity 2.0.6 genome guided de novo assembly 
+##############################################
+
+#/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/Trinity --genome_guided_bam /projects/cees/in_progress/monica/Nofima_transcriptome/assembly_ref_based/tophat_out/coordinate_sorted_acceed_hits.bam --seqType fq --left /projects/cees/in_progress/monica/Nofima_transcriptome/assembly/trinity_out_dir_norm_all_default/insilico_read_normalization/Trinity_input_R1_all.fastq.normalized_K25_C50_pctSD200.fq --right /projects/cees/in_progress/monica/Nofima_transcriptome/assembly/trinity_out_dir_norm_all_default/insilico_read_normalization/Trinity_input_R2_all.fastq.normalized_K25_C50_pctSD200.fq --genome_guided_max_intron 10000 --max_memory 150G --bflyHeapSpaceMax 10G --bflyCPU 12 --CPU 10  1> trinity_2.0.6_genome.out 2>trinity_2.0.6_genome.err
+#10 CPUs
+#12 bfly CPUs
+#150 Gb max memory
+#10 000 intro max
+#bfly heap space max 10 gb
+
+#edit failed commands to have max memory = 8 instead of 1
+#The 68 failed commands were sourced individually and then the original Trinity command was run after. 
+#The failed commands increased max memory from 1 Gb to 8 Gb. 
+
+
+##############################################
+#Trinity 2.0.6 assembly evaluation
+##############################################
+
+#trinity stats - few minutes
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/util/TrinityStats.pl \
+Trinity-GG.fasta > \
+Trinity-GG.fasta.stats.txt
+
+
+#abundance estimation - used to get a feel of the level of artefacts present
+
+# prepping reference assembly - less than 1 hour
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/util/align_and_estimate_abundance.pl \
+--transcripts /data/RNAseq2/assembly/Trinity-GG.fasta \
+--est_method RSEM \
+--aln_method bowtie \
+--trinity_mode --prep_reference
+
+#abundance estimation step 1 - use all input reads trimmed (NOT normalized) from the assembly - 1-4 days depending on number of sequences
+
+module load R #3.2.2
+export PATH=/cluster/software/INF_BIOX121_H15/R/R-3.2.2/bin:$PATH
+export R_LIBS=/cluster/software/VERSIONS/R-packages-3.2/
+
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/util/align_and_estimate_abundance.pl --transcripts ../trinity_out_dir/Trinity-GG.fasta --seqType fq --left ../../trimmed_data/R1_trimmed.fastq --right ../../trimmed_data/R2_trimmed.fastq --est_method RSEM --aln_method bowtie --thread_count 5 --trinity_mode --prep_reference 1>RSEM_abundance_GG.out 2>RSEM_abundance_GG.err
+
+#step 2
+
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/util/misc/count_features_given_MIN_FPKM_threshold.pl RSEM.genes.results > cumul_counts.txt
+
+
+############ full length estimation 
+
+module load blast+
+
+blastx -query /node/work1/no_backup/monica/genome_guided_trinity_2/trinity_out_dir/Trinity-GG.fasta  -db /projects/cees/databases/uniprot/uniprot_trembl.fasta -out blastx.outfmt6 -evalue 1e-20 -num_threads 20 -max_target_seqs 1 -outfmt 6
+
+
+#filtering assembly using the to abundance estimation - here using fpkm = 1 - takes a few minutes
+
+
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-\ 2.0.6/util/filter_fasta_by_rsem_values.pl \
+--rsem_output RSEM.isoforms.results \
+--fasta ../Trinity-GG.fasta \
+--output Trinity-GG-filtered.fasta \
+--fpkm_cutoff 1
+
+
+
+##############################################
+#Trinity 2.0.6 individual sample mapping for DE analysis
+##############################################
+
+# example one sample
+
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/util/align_and_estimate_abundance.pl \
+--transcripts /node/work1/no_backup/monica/genome_guided_trinity_2/abundance/Trinity-GG-filtered.fasta \
+--seqType fq \
+--left /node/work1/no_backup/monica/trimmed_data/2day_HK1_F_R1_trimmed_paired.fastq \
+--right /node/work1/no_backup/monica/trimmed_data/2day_HK1_F_R2_trimmed_paired.fastq \
+--est_method RSEM \
+--thread_count 15 \
+--output_dir 2day_HK1_F \
+--aln_method bowtie --trinity_mode \
+1>rsem_2day_trimmed_HK1_F.out \
+2>rsem_2day_trimmed_HK1_F.err
+
+
+##############################################
+#Trinity 2.0.6 raw count extraction for DE analysis
+##############################################
+
+# example one time point
+
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/util/abundance_estimates_to_matrix.pl \
+--est_method RSEM \
+--name_sample_by_basedir \
+--out_prefix 21day \
+/data/RNAseq2/differential_expression/mapping/21dayK_F4/RSEM.genes.results \
+/data/RNAseq2/differential_expression/mapping/21dayK_F5/RSEM.genes.results \
+/data/RNAseq2/differential_expression/mapping/21dayK_F6/RSEM.genes.results \
+/data/RNAseq2/differential_expression/mapping/21dayV_F1/RSEM.genes.results \
+/data/RNAseq2/differential_expression/mapping/21dayV_F2/RSEM.genes.results \
+/data/RNAseq2/differential_expression/mapping/21dayV_F3/RSEM.genes.results
+
+
+##############################################
+#Trinity 2.0.6 DE analysis
+##############################################
+
+# vibrio sample file:
+
+#2dayK	2day_F1_K
+#2dayK	2day_F2_K
+#2dayK	2day_F3_K
+#2dayK	2day_F4_K
+#2dayK	2day_F5_K
+#2dayK	2day_F6_K
+#2dayV	2day_F1_V
+#2dayV	2day_F2_V
+#2dayV	2day_F3_V
+#2dayV	2day_F4_V
+#2dayV	2day_F5_V
+#2dayV	2day_F6_V
+#4dayK	4day_F1_K
+#4dayK	4day_F2_K
+#4dayK	4day_F3_K
+#4dayK	4day_F4_K
+#4dayK	4day_F5_K
+#4dayK	4day_F6_K
+#4dayV	4day_F1_V
+#4dayV	4day_F2_V
+#4dayV	4day_F3_V
+#4dayV	4day_F4_V
+#4dayV	4day_F5_V
+#4dayV	4day_F6_V
+#21dayK	21day_F1_K
+#21dayK	21day_F2_K
+#21dayK	21day_F3_K
+#21dayK	21day_F4_K
+#21dayK	21day_F5_K
+#21dayK	21day_F6_K
+#21dayV	21day_F1_V
+#21dayV	21day_F2_V
+#21dayV	21day_F3_V
+#21dayV	21day_F4_V
+#21dayV	21day_F5_V
+#21dayV	21day_F6_V
+#42dayK	42day_F1_K
+#42dayK	42day_F2_K
+#42dayK	42day_F3_K
+#42dayK	42day_F4_K
+#42dayK	42day_F5_K
+#42dayK	42day_F6_K
+#42dayV	42day_F1_V
+#42dayV	42day_F2_V
+#42dayV	42day_F3_V
+#42dayV	42day_F4_V
+#42dayV	42day_F5_V
+#42dayV	42day_F6_V
+
+
+# vibrio contrast file
+
+#2dayV	2dayK
+#4dayV	4dayK
+#21dayV	21dayK
+#42dayV	42dayK
+
+
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/Analysis/DifferentialExpression/run_DE_analysis.pl --matrix Vibrio_filt_genes.counts.matrix --method edgeR --samples_file sample_file_vibrio --contrasts contrasts_file_vibrio
+
+/cluster/software/VERSIONS/trinityrnaseq/trinityrnaseq-2.0.6/Analysis/DifferentialExpression/analyze_diff_expr.pl --matrix ../Vibrio_filt_genes.TMM.fpkm.matrix --samples ../sample_file_vibrio
+
+
+
+##############################################
+#Trinotate 
+##############################################
+
+module load trinotate
+
+#Takes 1-2 weeks to do on cod transcriptomes skipping the non-mandatory steps. 
+
+blastx -query Trinity-GG.fasta -db /projects/cees/databases/swissprot/uniprot_sprot.trinotate.pep -num_threads 5 -max_target_seqs 1 -outfmt 6 > blastx.outfmt6 # use 20 cpus if available. takes 5 days 400 000 transcripts. 
+
+#make transdecoder longest orf file - transdecoder available through the loaded trinotate module. 
+
+TransDecoder -t Trinity-GG.fasta # uses 1 cpu by default - not possible to change. 
+
+#blasting transdecoder against swissprot
+
+blastp -query Trinity-GG.fasta.transdecoder.pep -db /projects/cees/databases/swissprot/uniprot_sprot.trinotate.pep -num_threads 20 -max_target_seqs 1 -outfmt 6 > blastp.outfmt6
+
+#structure searches - took 24 hrs
+hmmscan --cpu 20 --domtblout TrinotatePFAM.out /projects/cees/databases/pfam/Pfam-A.hmm Trinity-GG.fasta.transdecoder.pep > pfam.log
+
+#signalP
+
+signalp -f short -n signalp.out Trinity-GG.fasta.transdecoder.pep
+
+#tmHMM
+
+tmhmm --short < Trinity-GG.fasta.transdecoder.pep > tmhmm.out
+
+#RNAmmer
+RnammerTranscriptome.pl --transcriptome Trinity-GG.fasta --path_to_rnammer /cluster/software/VERSIONS/trinotate-2.0.1/rnammer-1.2/rnammer
+
+#concatenating into database
+
+#download the database and have it installed in current directory - takes ~10 minutes
+#PS PS PS this is version specific! This is for Trinity v2
+
+wget "https://data.broadinstitute.org/Trinity/Trinotate_v2.0_RESOURCES/Trinotate.sprot_uniref90.20150131.boilerplate.sqlite.gz" -O Trinotate.sqlite.gz
+gunzip Trinotate.sqlite.gz
+
+# the transmap is the same as for RSEM
+Trinotate Trinotate.sqlite init --gene_trans_map ../trinity_out_dir/Trinity-GG.fasta.gene_trans_map --transcript_fasta  ../trinity_out_dir/Trinity-GG.fasta --transdecoder_pep Trinity-GG.fasta.transdecoder.pep 
+
+# load protein hits
+Trinotate Trinotate.sqlite LOAD_swissprot_blastp blastp.outfmt6
+
+# load transcript hits
+Trinotate Trinotate.sqlite LOAD_swissprot_blastx blastx.outfmt6
+
+
+#Load Pfam domain entries
+
+Trinotate Trinotate.sqlite LOAD_pfam TrinotatePFAM.out
+
+#Load transmembrane domains
+
+Trinotate Trinotate.sqlite LOAD_tmhmm tmhmm.out
+
+#Load signal peptide predictions
+
+Trinotate Trinotate.sqlite LOAD_signalp signalp.out
+
+#Load rnammer
+Trinotate Trinotate.sqlite LOAD_rnammer Trinity-GG.fasta.rnammer.gff
+
+Trinotate Trinotate.sqlite report > trinotate_annotation_report_all_TrinityGG.xls # all annotations no cutoff, takes a while
+
