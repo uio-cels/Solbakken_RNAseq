@@ -1,0 +1,579 @@
+setwd("M:/pc/Dokumenter/CEES/Doktorgrad/Lab_and BioInformatics_PhD/Transcriptome/Trinity_reference_based/FINAL_withcustom_annotation/Final_Fishgenes_Custom_Francisella")
+
+#make sure matrix has ID as first column identifier. 
+
+tab=read.table("Custom_Francisella_filt_genes.counts.matrix",header=T)
+tab[,-1] <- round(tab[,-1,0])
+
+# Make covariates:
+control=as.factor(rep(c(rep("c",6),rep("f",6)),4))
+day=as.factor(c(rep("day0",12),rep("day2",12),rep("day4",12),rep("day7",12)))
+
+# number of genes
+n=dim(tab)[1]
+
+# Bonferroni correction, significance level=5%:
+alpha=0.05/n
+# want p values below this
+
+
+
+# Do a test on a single gene, gene 63:
+
+# Poisson-regression
+gg=glm(as.numeric(tab[63,2:49])~control+day+control:day, family=poisson)
+
+# Check factors, control, day and control:day:
+anova(gg,test="Chisq")
+
+# fetch p-values:
+anova(gg,test="Chisq")$Pr
+
+
+
+
+
+
+#Analysis of Deviance Table
+
+#Model: poisson, link: log
+
+#Response: as.numeric(tab[63, 2:49])
+
+#Terms added sequentially (first to last)
+
+
+#            Df Deviance Resid. Df Resid. Dev Pr(>Chi)    
+#NULL                           47     1784.8             
+#control      1  150.293        46     1634.5  < 2e-16 ***
+#day          3    9.574        43     1625.0  0.02256 *  
+#control:day  3   10.104        40     1614.9  0.01770 *  
+#---
+#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+#> 
+#> # fetch p-values:
+#> anova(gg,test="Chisq")$Pr
+#[1]           NA 1.496242e-34 2.255775e-02 1.769886e-02
+
+
+
+
+
+# Find genes with control group difference (control:day)
+for(i in 1:n)
+{
+  y=as.numeric(tab[i,2:49])
+  if(sum(y[control=="c"])>0 & sum(y[control=="f"])>0) # skip genes with zero expressions
+  {
+    gg=glm(y~control+day+control:day, family=poisson)
+    p=anova(gg,test="Chisq")$Pr[4]
+    if(p<alpha)
+    {
+      str=sprintf("gene %5s - %-20s: p-value=%9.3g (significance-level %9.3g)", i, tab[i,1], p, alpha)
+      show(str)
+
+	write.table(str, "fishgenes1_francisella_filt_ctr_day.txt", append = TRUE, col.names = FALSE)
+    }
+  }
+}
+
+
+
+# Find genes with time difference (day)
+for(i in 1:n)
+{
+  y=as.numeric(tab[i,2:49])
+  if(sum(y[control=="c"])>0 & sum(y[control=="f"])>0) # skip genes with zero expressions
+  {
+    gg=glm(y~day, family=poisson)
+    p=anova(gg,test="Chisq")$Pr[2]
+    if(p<alpha)
+    {
+      str=sprintf("gene %5s - %-20s: p-value=%9.3g (significance-level %9.3g)", i, tab[i,1], p, alpha)
+      show(str)
+
+	write.table(str, "fishgenes1_francisella_filt_time_day.txt", append = TRUE, col.names = FALSE)
+    }
+  }
+}
+
+
+
+#############################
+
+
+# Make covariates:
+control=as.factor(rep(c(rep("c",6),rep("f",6)),4))
+day=as.factor(c(rep("day0",12),rep("day2",12),rep("day4",12),rep("day7",12)))
+
+# number of genes
+n=dim(tab)[1]
+
+# Bonferroni correction, significance level=5%:
+alpha1=0.05/n
+# want p values below this
+
+# Use Bonferroni correction for comparing significance of 
+# day 0 group differences also (optional):
+alpha2=0.05/n
+
+# Go through all genes and put each into one of the following categories
+# 1) No difference in time or group
+# 2) Time difference but no group difference
+# 3) No difference in the two groups and first time point, but differing later
+# 4) Difference between groups from day 0.
+
+# Store results for each model here:
+m1=rep(0,0)
+m2=rep(0,0)
+m3=rep(0,0)
+m4=rep(0,0)
+
+# Find genes with time difference (day)
+for(i in 1:n)
+{
+  y=as.numeric(tab[i,2:49])
+  if(sum(y[control=="c"])>0 & sum(y[control=="f"])>0) # skip genes with zero expressions
+  {
+     gg=glm(y~day+control+control:day, family=poisson)
+     p1=anova(gg,test="Chisq")$Pr[2]   #### this was originally p1=anova(gg,test="Chisq")c2]. Couldn't fix. Tried $Pr2 instead.
+     p2=anova(gg,test="Chisq")$Pr[3]
+     p3=anova(gg,test="Chisq")$Pr[4]
+     if(p1>=alpha1 & p2>=alpha1 & p3>=alpha1)
+     {
+       str=sprintf("gene %5s - %-20s, no time or group dependency: p-value 1=%9.3g%%   p-value 2=%9.3g%%   p-value 3=%9.3g%% (significance-level %9.3g%%)", i, tab[i,1], p1*100, p2*100, p3*100, alpha1*100)
+       show(str)
+       m1=c(m1,str)
+     }
+     else if(p2>=alpha1 & p3>=alpha1)
+     {
+       str=sprintf("gene %5s - %-20s, time dep. but no group dep.: p-value 1=%9.3g%%   p-value 2=%9.3g%%   p-value 3=%9.3g%% (significance-level %9.3g%%)", i, tab[i,1], p1*100, p2*100, p3*100, alpha1*100)
+       show(str)
+       m2=c(m2,str)
+     }
+     else
+     {
+       y2=y[1:12]
+       control2=control[1:12]
+       day2=day[1:12]
+       if(sum(y2[control2=="c"])>0 & sum(y2[control2=="f"])>0) 
+       {
+         # skip genes with zero expressions
+         gg2=glm(y2~control2, family=poisson)
+         p4=anova(gg2,test="Chisq")$Pr[2]
+         if(p4>=0.05)
+         {
+            str=sprintf("gene %5s - %-20s, time and group dep, but not on day 0: p-value 1=%9.3g%%   p-value 2=%9.3g%%   p-value 3=%9.3g%%  (significance-level %9.3g%%) p-value 4=%9.3g%% (significance-level %9.3g%%)", i, tab[i,1], p1*100, p2*100, p3*100, alpha1*100, p4*100, alpha2*100)
+            show(str)
+            m3=c(m3,str)
+         }
+         else
+         {
+            str=sprintf("gene %5s - %-20s, time and group dep from day 0: p-value 1=%9.3g%%   p-value 2=%9.3g%%   p-value 3=%9.3g%% (significance-level %9.3g%%) p-value 4=%9.3g%% (significance-level %9.3g%%)", i, tab[i,1], p1*100, p2*100, p3*100, alpha1*100, p4*100, alpha2*100)
+            show(str)
+            m4=c(m4,str)
+         }
+       }
+       else
+       {
+          str=sprintf("gene %5s - %-20s, time and group dep, but not on day 0 (zero expressions): p-value 1=%9.3g%%   p-value 2=%9.3g%%   p-value 3=%9.3g%%  (significance-level %9.3g%%)", i, tab[i,1], p1*100, p2*100, p3*100, alpha1*100)
+          show(str)
+          m3=c(m3,str)
+       }
+     }
+  }
+}
+
+
+write(m1, "fishgenes2_francisella_filt_m1_nodep.txt", ncolumns=1)
+write(m2, "fishgenes2_francisella_filt_m2_timedep.txt", ncolumns=1)
+write(m3, "fishgenes2_francisella_filt_m3_groupdep_not_day0.txt", ncolumns=1)
+write(m4, "fishgenes2_francisella_filt_m4_groupdep_from_day0.txt", ncolumns=1)
+
+
+
+
+
+
+
+
+
+####################################
+
+
+
+library("pscl") # includes the zero inflation model
+
+
+# Make covariates:
+control=as.factor(rep(c(rep("c",6),rep("f",6)),4))
+day=as.factor(c(rep("day0",12),rep("day2",12),rep("day4",12),rep("day7",12)))
+
+# number of genes
+n=dim(tab)[1]
+
+# Go through all genes and put each into one of the following categories
+# 1) No difference in time or group
+# 2) Time difference but no group difference
+# 3) No difference in the two groups and first time point, but differing later
+# 4) Difference between groups from day 0.
+
+# Test the following 3 models for each case:
+# A) Poisson
+# B) Negative binomial
+# C) Zero-inflated negative binomial (with zero-inflation depending on anything 
+#    up to the examined model complexity)
+
+
+
+# Use BIC as model comparison tool. Needs special handling of pscl
+bic=function(obj)
+{
+  if(length(obj$loglik)) # zeroinfl object
+  {
+    k=1+length(obj$coef$count)+length(obj$coef$zero)
+    return(-2*obj$loglik+log(length(obj$res))*k)
+  }
+  
+  return(BIC(obj))
+}
+
+# Model categories:
+dependency=c(rep("No Dependency",3), rep("Only time dependency",4), rep("Time and control dependency",5))
+modeltype=c("Poisson","Negative binomial","Zero-inflated neg. bin.",
+            "Poisson","Negative binomial","Zero-inflated neg. bin.","Zero-inflated neg. bin.",
+            "Poisson","Negative binomial","Zero-inflated neg. bin.","Zero-inflated neg. bin.","Zero-inflated neg. bin.")
+
+
+
+
+# Store results for each model here:
+m1=rep(0,0)
+m2=rep(0,0)
+m3=rep(0,0)
+m4=rep(0,0)
+
+# Find genes with time difference (day)
+for(i in 1:n)
+{
+  y=as.numeric(tab[i,2:49])
+  show(i)  
+
+  # skip genes with zero expressions
+  if(sum(y[control=="c"])>0 & sum(y[control=="f"])>0) 
+  {
+    bics=rep(1e+200,12) # initialize BIC array
+    if(sum(y==0)>0) # examine zero-inflation models?
+    {
+      bics[1:3]=c( bic(glm(y~1, family=poisson)), bic(glm.nb(y~1)), 
+                   bic(zeroinfl(y~1,dist = "negbin"))) # no dependency
+      bics[4:5]=c( bic(glm(y~day, family=poisson)), bic(glm.nb(y~day)))  # only time
+      bics[6]=withRestarts(tryCatch(  bic(zeroinfl(y~day | 1, dist="negbin")) ), 
+              abort=function(){1e+200} )
+      bics[7]=withRestarts(tryCatch(  bic(zeroinfl(y~day | day, dist="negbin")) ), 
+              abort=function(){1e+200} )
+      bics[8:9]=c(bic(glm(y~day+control+day:control, family=poisson)), bic(glm.nb(y~day+control+day:control)) )
+      bics[10]=withRestarts(tryCatch( bic(zeroinfl(y~day+control+day:control | 1, dist="negbin")) ),
+               abort=function(){1e+200} )
+      bics[11]=withRestarts(tryCatch( bic(zeroinfl(y~day+control+day:control | day, dist="negbin")) ), 
+               abort=function(){1e+200} )
+      bics[12]=withRestarts(tryCatch( bic(zeroinfl(y~day+control+day:control | day+control+day:control, dist="negbin")) ),
+               abort=function(){1e+200} )
+    }
+    else # disregard zero-inflation models
+    {
+      bics[1:2]=c( bic(glm(y~1, family=poisson)), bic(glm.nb(y~1)) )  # no dependency
+      bics[4:6]=c(bic(glm(y~day, family=poisson)), bic(glm.nb(y~day)) ) # only time
+      bics[8:9]=c(bic(glm(y~day+control+day:control, family=poisson)), bic(glm.nb(y~day+control+day:control)) )
+    }
+
+    model=which(bics==min(bics)) # find the best model according to BIC
+
+    str=sprintf("gene %5s - %-20s, model=%s, %s", i, tab[i,1], modeltype[model], dependency[model])
+    show(str)
+    if(dependency[model]=="No Dependency")
+    {
+      m1=c(m1,str)
+    }
+    if(dependency[model]=="Only time dependency")
+    {
+      m2=c(m2,str)
+    }
+    if(dependency[model]=="Time and control dependency")
+    {
+      m3=c(m3,str)
+    }
+  }
+}
+   
+write(m1, "fishgenes3_francisella_filt_modelsel_nodep.txt", ncolumns=1)
+write(m2, "fishgenes3_francisella_filt_modelsel_timedep.txt", ncolumns=1)
+write(m3, "fishgenes3_francisella_filt_modelsel_groupdep.txt", ncolumns=1)
+
+
+
+
+
+
+########################################
+
+
+
+# Make covariates:
+control=as.factor(rep(c(rep("c",6),rep("f",6)),4))
+day=as.factor(c(rep("day0",12),rep("day2",12),rep("day4",12),rep("day7",12)))
+intday=as.numeric(c(rep(0,12),rep(2,12),rep(4,12),rep(7,12)))
+intday2=intday^2
+
+library("pscl") # includes the zero inflation model
+
+# Use BIC as model comparison tool. 
+bic=function(obj)
+{
+  return(BIC(obj))
+}
+
+# Model categories:
+dependency=c("No time dependency", "Linear time dependency", "quadratic time dependency", "freestyle time dependency")
+
+# Count number of rows:
+n=dim(tab)[1]
+
+
+# Store modclassications:
+modclass=rep(0,n)
+
+# Store effect/no effect:
+eff=rep(F,n)
+
+
+# Store results strings for each modclassication here:
+desc=rep("",n)
+
+# Stand in bad model, for when model analysis fails:
+x1=seq(-10,10,0.001)
+x2=x1^2
+badmod=lm(x2~x1)
+
+# Find genes with time difference (day)
+for(i in 1:n)
+{
+  y=as.numeric(tab[i,2:49])
+  show(i)  
+
+  # skip genes with zero expressions
+  if(sum(y[control=="c"])>0 & sum(y[control=="f"])>0) 
+  {
+    bics=rep(1e+200,8) # initialize BIC array
+
+    # No control/treatment effect models:
+    mod.A.no=withRestarts(tryCatch( 
+      glm.nb(y~1) ) , abort=function(){badmod} )
+    mod.B.no=withRestarts(tryCatch( 
+      glm.nb(y~intday) ) , 
+      abort=function(){badmod} )
+    mod.C.no=withRestarts(tryCatch( 
+      glm.nb(y~intday+intday2) ), 
+      abort=function(){badmod} )
+    mod.D.no=withRestarts(tryCatch( 
+      glm.nb(y~day) ), 
+      abort=function(){badmod} )
+
+    # Control/treatment effect models:
+    mod.A.eff=withRestarts(tryCatch( 
+      glm.nb(y~control) ), 
+      abort=function(){badmod} )
+    mod.B.eff=withRestarts(tryCatch( 
+      glm.nb(y~intday+control+control:intday) ), 
+      abort=function(){badmod} )
+    mod.C.eff=withRestarts(tryCatch( 
+      glm.nb(y~intday+intday2+control+control:intday+control:intday2) ), 
+      abort=function(){badmod} )
+    mod.D.eff=withRestarts(tryCatch( 
+      glm.nb(y~day+control+control:day) ), 
+      abort=function(){badmod} )
+
+    
+    bics=c(bic(mod.A.no),bic(mod.B.no),bic(mod.C.no),
+           bic(mod.D.no),bic(mod.A.eff),bic(mod.B.eff),
+           bic(mod.C.eff),bic(mod.D.eff))
+    
+    # Enumerate the best model:
+    bestmod=which(bics==min(bics))
+    
+
+
+    # Find whether the best model is increasing, decreasing,
+    # has a top or bottom or is freestyle or time independent:
+    maxpoint=minpoint=0
+    is.increasing=is.decreasing=is.top=is.bottom=
+       is.freestyle=F
+    if(bestmod==4 | bestmod==8)
+      is.freestyle=T
+    if(bestmod==2) # linear trend, no treatment effect
+    {
+      slope=as.numeric(mod.B.no$coef[2])
+      if(slope>0)
+        is.increasing=T
+      else
+        is.decreasing=T
+    }
+    if(bestmod==3) # Quadratic trend
+    {
+      slope=as.numeric(mod.C.no$coef[2])
+      quad=as.numeric(mod.C.no$coef[3])
+      if(quad>0)
+      {
+        minpoint=-slope/2/quad
+        if(minpoint<1)
+          is.increasing=T
+        else if(minpoint>4.5)
+          is.decreasing=T
+        else
+          is.bottom=T
+      }
+      else
+      {
+        maxpoint=-slope/2/quad
+        if(maxpoint<1)
+          is.decreasing=T
+        else if(maxpoint>4.5)
+          is.increasing=T
+        else
+          is.top=T
+      }
+    }
+    if(bestmod==6) # linear trend, treatment effect
+    {
+      slope=as.numeric(mod.B.eff$coef[2])+
+            as.numeric(mod.B.eff$coef[4])
+      if(slope>0)
+        is.increasing=T
+      else
+        is.decreasing=T
+    }
+    if(bestmod==7) # Quadratic trend, treatment effect
+    {
+      slope=as.numeric(mod.C.eff$coef[2])+
+            as.numeric(mod.C.eff$coef[5])
+      quad=as.numeric(mod.C.eff$coef[3])+
+           as.numeric(mod.C.eff$coef[6])
+      if(quad>0)
+      {
+        minpoint=-slope/2/quad
+        if(minpoint<1)
+          is.increasing=T
+        else if(minpoint>4.5)
+          is.decreasing=T
+        else
+          is.bottom=T
+      }
+      else
+      {
+        maxpoint=-slope/2/quad
+        if(maxpoint<1)
+          is.decreasing=T
+        else if(maxpoint>4.5)
+          is.increasing=T
+        else
+          is.top=T
+      }
+    }
+    
+    if(!is.top & !is.bottom)
+      str=sprintf("gene %5s - %-20s, %s", i, tab[i,1], 
+          dependency[(bestmod-1)%%4+1])
+    if(is.top)
+      str=sprintf("gene %5s - %-20s, %s with top point=day %3.2f", 
+          i, tab[i,1], dependency[(bestmod-1)%%4+1], maxpoint)
+    if(is.bottom)
+      str=sprintf("gene %5s - %-20s, %s with bottom point=day %3.2f", 
+          i, tab[i,1], dependency[(bestmod-1)%%4+1], minpoint)
+
+    desc[i]=str
+    show(str)
+
+    modclass[i]=0
+    if(is.increasing)
+      modclass[i]=1
+    if(is.decreasing)
+      modclass[i]=2
+    if(is.top)
+      modclass[i]=3
+    if(is.bottom)
+      modclass[i]=4
+    if(is.freestyle)
+      modclass[i]=5
+    if(bestmod>4)
+      eff[i]=T
+  }
+  else
+  {
+    eff[i]=F
+    modclass[i]=0
+    str=sprintf("gene %5s - %-20s, %s", i, tab[i,1], 
+          dependency[1])
+
+    desc[i]=str
+    show(str)
+  }
+}
+   
+
+# Write to files:
+
+write(desc[modclass==0 & eff==F], "fishgenes4_Notimedep_nocontroldep_francisella.txt", ncolumns=1)
+write(desc[modclass==1 & eff==F], "fishgenes4_Increaseintime_nocontroldep_francisella.txt", ncolumns=1)
+write(desc[modclass==2 & eff==F], "fishgenes4_Decreaseintime_nocontroldep_francisella.txt", ncolumns=1)
+write(desc[modclass==3 & eff==F], "fishgenes4_Internalmaximum_nocontroldep_francisella.txt", ncolumns=1)
+write(desc[modclass==4 & eff==F], "fishgenes4_Internalminimum_nocontroldep_francisella.txt", ncolumns=1)
+write(desc[modclass==5 & eff==F], "fishgenes4_Freestyle_nocontroldep_francisella.txt", ncolumns=1)
+
+write(desc[modclass==0 & eff==T], "fishgenes4_Notimedep_controldepeffect_francisella.txt", ncolumns=1)
+write(desc[modclass==1 & eff==T], "fishgenes4_Increaseintime_controldepeffect_francisella.txt", ncolumns=1)
+write(desc[modclass==2 & eff==T], "fishgenes4_Decreaseintime_controldepeffect_francisella.txt", ncolumns=1)
+write(desc[modclass==3 & eff==T], "fishgenes4_Internalmaximum_controldepeffect_francisella.txt", ncolumns=1)
+write(desc[modclass==4 & eff==T], "fishgenes4_Internalminimum_controldepeffect_francisella.txt", ncolumns=1)
+write(desc[modclass==5 & eff==T], "fishgenes4_Freestyle_controldepeffect_francisella.txt", ncolumns=1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
